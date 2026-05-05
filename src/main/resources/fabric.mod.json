@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "aibot",
+  "version": "${version}",
+  "name": "AI Bot",
+  "description": "Spawns a stationary fake-player bot that swings a sword in the direction you were looking. Server-side only.",
+  "authors": [
+    "Neo"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "com.aibot.AiBotMod"
+    ]
+  },
+  "mixins": [
+    "aibot.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.18.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21.11",
+    "java": ">=21"
+  }
+}
