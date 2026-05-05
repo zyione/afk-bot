@@ -8,6 +8,7 @@ import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.*;
 import net.minecraft.network.packet.c2s.common.SyncedClientOptions;
+import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -97,16 +98,14 @@ public class BotPlayer extends ServerPlayerEntity {
         // Initialize storage on first tick (world is fully loaded by then)
         if (!initialized) {
             initialized = true;
-            initStorage((ServerWorld) this.getWorld());
+            initStorage((ServerWorld) this.getEntityWorld());
         }
 
         tickCounter++;
         runBotLogic();
 
-        // Call super to handle basic entity ticking (NOT the full player tick
+        // Call baseTick for basic entity ticking (NOT the full player tick
         // which tries to send packets). We manually handle everything.
-        // super.tick() would crash without a real network handler, so we
-        // only call the entity-level baseTick.
         this.baseTick();
     }
 
@@ -221,20 +220,21 @@ public class BotPlayer extends ServerPlayerEntity {
 
         // Cast a ray from the bot's eyes in the locked facing direction
         Vec3d eyePos = this.getEyePos();
-        Vec3d lookVec = getRotationVector(lockedPitch, lockedYaw);
+        Vec3d lookVec = calculateLookVector(lockedPitch, lockedYaw);
         Vec3d reachEnd = eyePos.add(lookVec.multiply(3.5)); // 3.5 block reach
 
         // Build a bounding box along the ray for broad-phase check
         Box searchBox = new Box(eyePos, reachEnd).expand(1.0);
 
-        // Check for entity hit using ProjectileUtil
+        // Check for entity hit using ProjectileUtil (7-arg overload: World, Entity, start, end, box, predicate, margin)
         EntityHitResult entityHit = ProjectileUtil.getEntityCollision(
-                this.getWorld(),
+                this.getEntityWorld(),
                 this,
                 eyePos,
                 reachEnd,
                 searchBox,
-                e -> !e.isSpectator() && e.canHit() && e != this
+                e -> !e.isSpectator() && e.canHit() && e != this,
+                0.3f // margin for hit detection
         );
 
         if (entityHit != null) {
@@ -243,7 +243,7 @@ public class BotPlayer extends ServerPlayerEntity {
         }
 
         // Reset attack cooldown regardless (swing animation)
-        this.resetLastAttackedTicks();
+        this.resetTicksSinceLastAttack();
     }
 
     // ─── Item Management ────────────────────────────────────────────────
@@ -256,7 +256,7 @@ public class BotPlayer extends ServerPlayerEntity {
         ItemStack current = this.getMainHandStack();
         if (!current.isEmpty()) {
             depositToBarrel(current.copy());
-            this.getInventory().setStack(this.getInventory().selectedSlot, ItemStack.EMPTY);
+            this.getInventory().setStack(this.getInventory().getSelectedSlot(), ItemStack.EMPTY);
         }
 
         // 2. Fetch next item from chest
@@ -269,7 +269,7 @@ public class BotPlayer extends ServerPlayerEntity {
         }
 
         // 3. Equip it to main hand
-        this.getInventory().setStack(this.getInventory().selectedSlot, next);
+        this.getInventory().setStack(this.getInventory().getSelectedSlot(), next);
         sendOwnerMessage("Equipped: " + next.getName().getString(), Formatting.AQUA);
         state = BotState.ATTACKING;
     }
@@ -280,7 +280,7 @@ public class BotPlayer extends ServerPlayerEntity {
     private ItemStack takeBestItemFromChest() {
         if (chestPos == null) return ItemStack.EMPTY;
 
-        BlockEntity be = this.getWorld().getBlockEntity(chestPos);
+        BlockEntity be = this.getEntityWorld().getBlockEntity(chestPos);
         if (!(be instanceof Inventory chest)) return ItemStack.EMPTY;
 
         // Score all items and pick the best
@@ -308,15 +308,15 @@ public class BotPlayer extends ServerPlayerEntity {
     /**
      * Scores an item for weapon priority.
      * Higher score = better weapon.
+     * SwordItem no longer exists in 1.21.11 — swords are identified via ItemTags.SWORDS.
      */
     private int scoreItem(ItemStack stack) {
         if (stack.isEmpty()) return 0;
 
         Item item = stack.getItem();
 
-        // Swords — scored by material tier
-        if (item instanceof SwordItem sword) {
-            // Netherite = highest attack damage, so scoring by attack damage works
+        // Swords — identified by tag, scored by specific item identity
+        if (stack.isIn(ItemTags.SWORDS)) {
             if (item == Items.NETHERITE_SWORD) return 100;
             if (item == Items.DIAMOND_SWORD) return 90;
             if (item == Items.IRON_SWORD) return 80;
@@ -326,8 +326,8 @@ public class BotPlayer extends ServerPlayerEntity {
             return 45; // Any other sword (modded, tagged)
         }
 
-        // Axes — secondary weapon choice
-        if (item instanceof AxeItem) {
+        // Axes — AxeItem still exists in 1.21.11
+        if (item instanceof AxeItem || stack.isIn(ItemTags.AXES)) {
             if (item == Items.NETHERITE_AXE) return 40;
             if (item == Items.DIAMOND_AXE) return 38;
             if (item == Items.IRON_AXE) return 36;
@@ -351,7 +351,7 @@ public class BotPlayer extends ServerPlayerEntity {
             return;
         }
 
-        BlockEntity be = this.getWorld().getBlockEntity(barrelPos);
+        BlockEntity be = this.getEntityWorld().getBlockEntity(barrelPos);
         if (!(be instanceof Inventory barrel)) {
             this.dropItem(damaged, false);
             return;
@@ -380,7 +380,7 @@ public class BotPlayer extends ServerPlayerEntity {
             return;
         }
 
-        BlockEntity be = this.getWorld().getBlockEntity(chestPos);
+        BlockEntity be = this.getEntityWorld().getBlockEntity(chestPos);
         if (!(be instanceof Inventory chest)) {
             this.dropItem(item, false);
             return;
@@ -427,9 +427,9 @@ public class BotPlayer extends ServerPlayerEntity {
 
     /**
      * Calculates the rotation vector from pitch and yaw.
-     * Same as Entity.getRotationVector but with explicit parameters.
+     * Named to avoid collision with Entity.getRotationVector(float, float) which is final.
      */
-    private static Vec3d getRotationVector(float pitch, float yaw) {
+    private static Vec3d calculateLookVector(float pitch, float yaw) {
         float pitchRad = pitch * ((float) Math.PI / 180F);
         float yawRad = -yaw * ((float) Math.PI / 180F);
         float cosYaw = (float) Math.cos(yawRad);

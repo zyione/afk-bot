@@ -43,7 +43,7 @@ public class AiCommand {
             return 0;
         }
 
-        ServerWorld world = player.getServerWorld();
+        ServerWorld world = (ServerWorld) player.getEntityWorld();
 
         // Spawn the bot — BotManager handles despawning any existing bot
         BotManager.spawnBot(player, world);

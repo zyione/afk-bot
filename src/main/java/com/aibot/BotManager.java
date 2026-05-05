@@ -49,21 +49,15 @@ public class BotManager {
                 world.getServer(), world, profile, owner,
                 yaw, pitch
         );
-        bot.setPosition(owner.getPos());
+        bot.setPosition(owner.getEntityPos());
 
-        // The bot needs a network handler set to avoid NPEs.
-        // We connect the bot through the player manager which sets up everything properly.
-        // Instead, we'll set the network handler manually via our accessor mixin.
-        // For a fake player, we need to be careful here.
-        // We'll spawn it as an entity in the world directly.
-
-        // Add to world - using the player manager's approach for adding to the world
+        // Add to world as entity — no network connection needed
         world.spawnEntity(bot);
 
-        // Force-load chunks at spawn position
+        // Force-load chunks at spawn position (3-arg: Type, ChunkPos, radius)
         ChunkPos chunkPos = new ChunkPos(bot.getBlockPos());
         world.getChunkManager().addTicket(
-                ChunkTicketType.FORCED, chunkPos, 2, chunkPos
+                ChunkTicketType.FORCED, chunkPos, 2
         );
 
         activeBots.put(owner.getUuid(), bot);
@@ -84,11 +78,11 @@ public class BotManager {
         BotPlayer bot = activeBots.remove(owner.getUuid());
         if (bot == null) return;
 
-        // Remove chunk ticket
-        ServerWorld world = (ServerWorld) bot.getWorld();
+        // Remove chunk ticket (3-arg: Type, ChunkPos, radius)
+        ServerWorld world = (ServerWorld) bot.getEntityWorld();
         ChunkPos chunkPos = new ChunkPos(bot.getBlockPos());
         world.getChunkManager().removeTicket(
-                ChunkTicketType.FORCED, chunkPos, 2, chunkPos
+                ChunkTicketType.FORCED, chunkPos, 2
         );
 
         // Try to return held item to chest before despawning
@@ -128,10 +122,10 @@ public class BotManager {
             BotPlayer bot = entry.getValue();
             if (bot.isRemoved()) {
                 // Clean up chunk ticket for externally removed bots
-                ServerWorld world = (ServerWorld) bot.getWorld();
+                ServerWorld world = (ServerWorld) bot.getEntityWorld();
                 ChunkPos chunkPos = new ChunkPos(bot.getBlockPos());
                 world.getChunkManager().removeTicket(
-                        ChunkTicketType.FORCED, chunkPos, 2, chunkPos
+                        ChunkTicketType.FORCED, chunkPos, 2
                 );
                 return true;
             }
